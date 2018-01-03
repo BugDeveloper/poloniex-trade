@@ -15,7 +15,8 @@ MARKETS = [
     'BTC_ZEC',
     'BTC_CVC',
     'BTC_XEM',
-    'BTC_VTC'
+    'BTC_LTC',
+
 ]
 
 CAN_SPEND = 0.0002
@@ -138,13 +139,14 @@ def create_buy(market):
     ticker_data = poloniex_api.returnTicker()[market]
     current_rate = float(ticker_data['lowestAsk'])
     can_buy = CAN_SPEND / current_rate
+    can_buy_fee = can_buy - can_buy * STOCK_FEE
 
     pair = market.split('_')
     log(market, """
         Текущая цена - %0.8f
         На сумму %0.8f %s можно купить %0.8f %s
         Создаю ордер на покупку
-        """ % (current_rate, CAN_SPEND, pair[0], can_buy, pair[1])
+        """ % (current_rate, CAN_SPEND, pair[0], can_buy_fee, pair[1])
         )
     try:
         order_res = poloniex_api.buy(market, current_rate, can_buy)
@@ -342,6 +344,7 @@ while True:
 
                         order_sum_info['rate'] /= i
                         order_sum_info['fee'] /= i
+                        order_sum_info['amount'] = order_sum_info['amount'] - order_sum_info['amount'] * STOCK_FEE
 
                         cursor.execute(
                             """
@@ -363,53 +366,29 @@ while True:
                         )
                         conn.commit()
                         log(market, "Ордер %s помечен выполненным в БД" % order)
+
                         orders_info[order]['order_filled'] = datetime.now()
                     except poloniex.PoloniexError as e:
                         log(market, "Ордер %s еще не выполнен потому что %s" % (order, e))
 
             for order in orders_info:
-                if orders_info[order]['order_type'] == 'buy':
-                    if orders_info[order]['order_filled']:  # если ордер на покупку был выполнен
+                # if orders_info[order]['order_type'] == 'buy':
+                if orders_info[order]['order_filled']:  # если ордер на покупку был выполнен
 
-                        if USE_MACD:
-                            macd_advice = get_macd_advice(
-                                chart_data=get_ticks(market))  # проверяем, можно ли создать sell
-                            if macd_advice['trand'] == 'BEAR' or (
-                                    macd_advice['trand'] == 'BULL' and macd_advice['growing']):
-                                log(market,
-                                    'Для ордера %s не создаем ордер на продажу, т.к. ситуация на рынке неподходящая' % order)
-                            else:
-                                log(market, "Для выполненного ордера на покупку выставляем ордер на продажу")
-                                create_sell(from_order=orders_info[order]['order_id'], market=market)
-                        else:  # создаем sell если тенденция рынка позволяет
+                    if USE_MACD:
+                        macd_advice = get_macd_advice(
+                            chart_data=get_ticks(market))  # проверяем, можно ли создать sell
+                        if macd_advice['trand'] == 'BEAR' or (
+                                macd_advice['trand'] == 'BULL' and macd_advice['growing']):
+                            log(market,
+                                'Для ордера %s не создаем ордер на продажу, т.к. ситуация на рынке неподходящая' % order)
+                        else:
                             log(market, "Для выполненного ордера на покупку выставляем ордер на продажу")
                             create_sell(from_order=orders_info[order]['order_id'], market=market)
-                    else:  # Если buy не был исполнен, и прошло достаточно времени для отмены ордера, отменяем
-                        if 'order_canceled' not in orders_info[order] or not orders_info[order]['order_cancelled']:
-                            order_time = time.mktime(datetime.strptime(orders_info[order]['order_created'],
-                                                                       "%Y-%m-%d %H:%M:%S").timetuple())
-                            time_passed = time.time() - order_time
-
-                            if time_passed > ORDER_LIFE_TIME * 60:
-                                log('Пора отменять ордер %s' % order)
-                                cancel_res = poloniex_api.cancelOrder(order)
-                                if cancel_res['success']:
-                                    cursor.execute(
-                                        """
-                                          UPDATE orders
-                                          SET
-                                            order_cancelled=datetime()
-                                          WHERE
-                                            order_id = :order_id
-
-                                        """, {
-                                            'order_id': order
-                                        }
-                                    )
-                                    conn.commit()
-                                    log(market, "Ордер %s помечен отмененным в БД" % order)
-
-                else:  # ордер на продажу
+                    else:  # создаем sell если тенденция рынка позволяет
+                        log(market, "Для выполненного ордера на покупку выставляем ордер на продажу")
+                        create_sell(from_order=orders_info[order]['order_id'], market=market)
+                else:  # Если buy не был исполнен, и прошло достаточно времени для отмены ордера, отменяем
                     if 'order_canceled' not in orders_info[order] or not orders_info[order]['order_cancelled']:
                         order_time = time.mktime(datetime.strptime(orders_info[order]['order_created'],
                                                                    "%Y-%m-%d %H:%M:%S").timetuple())
@@ -432,7 +411,32 @@ while True:
                                     }
                                 )
                                 conn.commit()
-                                log(market, "Ордер на продажу %s помечен отмененным в БД" % order)
+                                log(market, "Ордер %s помечен отмененным в БД" % order)
+
+            # else:  # ордер на продажу
+            #     if 'order_canceled' not in orders_info[order] or not orders_info[order]['order_cancelled']:
+            #         order_time = time.mktime(datetime.strptime(orders_info[order]['order_created'],
+            #                                                    "%Y-%m-%d %H:%M:%S").timetuple())
+            #         time_passed = time.time() - order_time
+            #
+            #         if time_passed > ORDER_LIFE_TIME * 60:
+            #             log('Пора отменять ордер %s' % order)
+            #             cancel_res = poloniex_api.cancelOrder(order)
+            #             if cancel_res['success']:
+            #                 cursor.execute(
+            #                     """
+            #                       UPDATE orders
+            #                       SET
+            #                         order_cancelled=datetime()
+            #                       WHERE
+            #                         order_id = :order_id
+            #
+            #                     """, {
+            #                         'order_id': order
+            #                     }
+            #                 )
+            #                 conn.commit()
+            #                 log(market, "Ордер на продажу %s помечен отмененным в БД" % order)
         else:
             log(market, "Неисполненных ордеров в БД нет, пора ли создать новый?")
             # Проверяем MACD, если рынок в нужном состоянии, выставляем ордер на покупку

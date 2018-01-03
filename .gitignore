@@ -101,3 +101,9 @@ ENV/
 .mypy_cache/
 
 \.idea/
+
+log\.txt
+
+local\.db
+
+Test\.py
