@@ -1,5 +1,7 @@
 # poloniex-trade
 
+Poloniex ready to use trade bot.
+
 ## Global variables
 
 **API_KEY** - Your api key.
