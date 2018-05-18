@@ -6,8 +6,8 @@ import talib
 import poloniex
 from datetime import datetime
 
-API_KEY = 'T22UNIMI-RIPLNU08-2T85OQY0-6JS7Q4PA'
-SECRET_KEY = 'b604caf8b44e24c7d2ccc770c6ec8f5965e3fe47e8635616082056c0d4dbfeb30070a0c0ef0107627006d25a2e08200920bee53bdd68ffcbd187c007cff30cb3'
+API_KEY = ''
+SECRET_KEY = ''
 
 MARKETS = [
     'BTC_ETH',
